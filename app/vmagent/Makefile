@@ -19,7 +19,7 @@ vmagent-arm-prod:
 	APP_NAME=vmagent $(MAKE) app-via-docker-arm
 
 vmagent-arm64-prod:
-	APP_NAME=vmagent $(MAKE) app-via-docker-arm64
+	APP_NAME=vmagent $(MAKE) app-via-docker-arm64-nocgo
 
 vmagent-ppc64le-prod:
 	APP_NAME=vmagent $(MAKE) app-via-docker-ppc64le
@@ -40,7 +40,7 @@ package-vmagent-arm:
 	APP_NAME=vmagent $(MAKE) package-via-docker-arm
 
 package-vmagent-arm64:
-	APP_NAME=vmagent $(MAKE) package-via-docker-arm64
+	APP_NAME=vmagent $(MAKE) package-via-docker-arm64-nocgo
 
 package-vmagent-ppc64le:
 	APP_NAME=vmagent $(MAKE) package-via-docker-ppc64le
