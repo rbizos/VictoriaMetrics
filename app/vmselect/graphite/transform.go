@@ -1316,6 +1316,61 @@ func transformDivideSeries(ec *evalConfig, fe *graphiteql.FuncExpr) (nextSeriesF
 	return f, nil
 }
 
+// See https://graphite.readthedocs.io/en/latest/functions.html#graphite.render.functions.aggregateSeriesLists
+func aggregateSeriesListGeneric(ec *evalConfig, fe *graphiteql.FuncExpr, nextSeriesFirst, nextSeriesSecond nextSeriesFunc, funcName string) (nextSeriesFunc, error) {
+	ssFirst, stepFirst, err := fetchNormalizedSeries(ec, nextSeriesFirst, false)
+	if err != nil {
+		return nil, err
+	}
+	ssSecond, stepSecond, err := fetchNormalizedSeries(ec, nextSeriesSecond, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ssFirst) != len(ssSecond) {
+		return nil, fmt.Errorf("First and second lists must have equal number of series; got %d vs %d series", len(ssFirst), len(ssSecond))
+	}
+	if stepFirst != stepSecond {
+		return nil, fmt.Errorf("step mismatch for first and second: %d vs %d", stepFirst, stepSecond)
+	}
+
+	for i, s := range ssFirst {
+		sSecond := ssSecond[i]
+		values := s.Values
+		secondValues := sSecond.Values
+		for j, v := range values {
+			values[j] = v / secondValues[j]
+		}
+		s.Name = fmt.Sprintf("divideSeries(%s,%s)", s.Name, sSecond.Name)
+		s.expr = fe
+		s.pathExpression = s.Name
+	}
+	return multiSeriesFunc(ssFirst), nil
+
+}
+
+func transformAggregateSeriesList(ec *evalConfig, fe *graphiteql.FuncExpr) (nextSeriesFunc, error) {
+	args := fe.Args
+	if len(args) != 2 {
+		return nil, fmt.Errorf("unexpected number of args; got %d; want 2", len(args))
+	}
+	ssFirst, err := evalSeriesList(ec, args, "dividendSeriesList", 0)
+	if err != nil {
+		return nil, err
+	}
+	ssSecond, err := evalSeriesList(ec, args, "divisorSeriesList", 1)
+	if err != nil {
+		return nil, err
+	}
+
+	funcName, err := getString(args, "func", 1)
+	if err != nil {
+		return nil, err
+	}
+	funcName = strings.TrimSuffix(funcName, "Series")
+	return aggregateSeriesListGeneric(ec, fe, ssFirst, ssSecond, funcName)
+}
+
 // See https://graphite.readthedocs.io/en/stable/functions.html#graphite.render.functions.divideSeriesLists
 func transformDivideSeriesLists(ec *evalConfig, fe *graphiteql.FuncExpr) (nextSeriesFunc, error) {
 	args := fe.Args
