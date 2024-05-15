@@ -3,6 +3,8 @@ package graphite
 import (
 	"container/heap"
 	"fmt"
+	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmselect/graphiteql"
+	"github.com/VictoriaMetrics/VictoriaMetrics/lib/cgroup"
 	"math"
 	"math/rand"
 	"regexp"
@@ -12,9 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/VictoriaMetrics/VictoriaMetrics/app/vmselect/graphiteql"
-	"github.com/VictoriaMetrics/VictoriaMetrics/lib/cgroup"
 )
 
 // nextSeriesFunc must return the next series to process.
@@ -193,6 +192,51 @@ func init() {
 	}
 }
 
+// See https://graphite.readthedocs.io/en/stable/functions.html#graphite.render.functions.mapSeries
+// it stores the created lists is series to transmit it to the outer reduceSeries call, its not intended
+// to be called as is as the series are empty.
+// it could be better to only query the index and not the datapoints when fetching all series
+func transformMapSeries(ec *evalConfig, fe *graphiteql.FuncExpr) (nextSeriesFunc, error) {
+	args := fe.Args
+	if len(args) < 1 {
+		return nil, fmt.Errorf("unexpected number of args; got %d; want at least 1", len(args))
+	}
+	mapNodes, err := getInts(args[1:], "mapNodes")
+	if err != nil {
+		return nil, err
+	}
+	baseName, err := getString(args, "seriesList", 0)
+	nextSeries, err := evalExpr(ec, args[0])
+	if err != nil {
+		return nil, err
+	}
+	ss, err := fetchAllSeries(nextSeries)
+	if err != nil {
+		return nil, err
+	}
+	seriesListsSet := make(map[string]struct{})
+	baseNodes := strings.Split(baseName, ".")
+	for _, s := range ss {
+		currentNodes := strings.Split(s.Name, ".")
+		for _, node := range mapNodes {
+			baseNodes[node] = currentNodes[node]
+		}
+		seriesListsSet[strings.Join(baseNodes, ".")] = struct{}{}
+	}
+
+	seriesLists := make([]*series, 0, len(seriesListsSet))
+
+	for key := range seriesListsSet {
+		var s series
+		s.Name = key
+		seriesLists = append(seriesLists, &s)
+	}
+	return multiSeriesFunc(seriesLists), nil
+}
+
+func transformReduceSeries(ec *evalConfig, fe *graphiteql.FuncExpr) (nextSeriesFunc, error) {
+	getMapSeries(ec)
+}
 func transformTODO(_ *evalConfig, _ *graphiteql.FuncExpr) (nextSeriesFunc, error) {
 	return nil, fmt.Errorf("TODO: implement this function")
 }
